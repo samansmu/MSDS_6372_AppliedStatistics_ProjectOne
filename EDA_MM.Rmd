@@ -1,0 +1,202 @@
+---
+title: "msds6372_project1"
+author: "Michael Mazel"
+date: "5/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(PerformanceAnalytics)
+library(rgl)
+```
+Import and view summary of columns
+```{r}
+LifeExpData = read.csv(file = "Life Expectancy Data.csv", stringsAsFactors = T)
+summary(LifeExpData)
+```
+Split data into train and split sets
+```{r}
+set.seed(123)
+smp_size <- floor(0.75 * nrow(LifeExpData))
+train_ind  <- sample(seq_len(nrow(LifeExpData)), size = smp_size)
+LifeExpData <- LifeExpData[train_ind, ]
+test <- LifeExpData[-train_ind, ]
+```
+
+Check how many levels are in each categorical variable. Then view histograms
+```{r}
+length(unique(LifeExpData$Status))
+length(unique(LifeExpData$Country))
+```
+
+```{r}
+ggplot(LifeExpData, aes(x=Life.expectancy, fill=Status)) +
+  geom_histogram(alpha=0.5, position="identity")
+```
+    
+Merge original dataset with country coordinates data. Then, convert coordinates to numeric. For latitude, make Southern values negative, and for longitude, make western values negative.
+```{r}
+Geo = read.csv(file = "Countries_Long_Lat.csv")
+LifeExpData <- merge(x = LifeExpData, y = Geo, by = "Country")
+
+LifeExpData$Latitude <- ifelse(str_detect(LifeExpData$Latitude, "S"), paste("-", LifeExpData$Latitude, sep=""), LifeExpData$Latitude)
+LifeExpData$Latitude = substr(LifeExpData$Latitude,1,nchar(LifeExpData$Latitude)-1)
+LifeExpData$Latitude <- as.numeric(LifeExpData$Latitude)
+
+LifeExpData$Longitude <- ifelse(str_detect(LifeExpData$Longitude, "W"), paste("-", LifeExpData$Longitude, sep=""), LifeExpData$Longitude)
+LifeExpData$Longitude = substr(LifeExpData$Longitude,1,nchar(LifeExpData$Longitude)-1)
+LifeExpData$Longitude <- as.numeric(LifeExpData$Longitude)
+```
+
+Visualize lat and long against life expectancy
+```{r}
+ggplot(LifeExpData %>% distinct(Country, .keep_all = TRUE) , aes(y=Life.expectancy, x=Latitude)) + geom_point(alpha=0.5)
+ggplot(LifeExpData %>% distinct(Country, .keep_all = TRUE), aes(y=Life.expectancy, x=Longitude)) + geom_point(alpha=0.5)
+
+plot3d( 
+  z=LifeExpData$Life.expectancy, y=LifeExpData$Latitude, x=LifeExpData$Longitude, 
+  xlab="Longitude", ylab="Latitude", zlab="Life.expectancy")
+```
+
+View correlations between quantitative variables
+```{r}
+quant <- subset(LifeExpData, select=-c(Country, Status))
+chart.Correlation(quant, histogram=FALSE, pch=19)
+```
+
+We can see our response variable, LifeExpectancy, has correlations up to .75. Predictor variables have correlations up to 1 with one-another. Let's view the scatterplots
+```{r}
+par(mfrow=c(2,3))
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Year)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$infant.deaths)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Alcohol)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$percentage.expenditure)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$under.five.deaths)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Measles)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$BMI)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Polio)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Total.expenditure)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Diphtheria)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$HIV.AIDS)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$GDP)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Population)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness..1.19.years)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness.5.9.years)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Income.composition.of.resources)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Schooling)
+```
+    
+We can see a few points of concern, such as some strong outliers. Additionally, some variables have distinct branches, such as Adult.Mortality. Let's explore these variables to see if we can determine the cause. First, we will color based off developed or undeveloped status.
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality, col = LifeExpData$Status)
+```
+   
+This does not solve the disparity, let's see the individual data points between the two clusters
+```{r}
+LifeExpData %>% filter(Adult.Mortality < 40)
+LifeExpData %>% filter(Adult.Mortality > 100)
+```
+Counties frequently appear in both groups above. For example, Afghanistan has a 3 listed for Adult.Mortality in one year, and all the others years fall between 260 and 320. Similar situations occur with many other counties such as Armenia, South Sudan, and Spain. It seems clear the cause is a reporting error, in which countries incorrectly reported their statistic as per 100 population or per 10 population. It should be reported as per 1000 population.
+  
+Now, let's examine similar situations from above. First, infant.deaths:
+```{r}
+LifeExpData %>% filter(infant.deaths < 500)
+LifeExpData %>% filter(infant.deaths > 750)
+```
+```{r}
+LifeExpData %>% filter(Country == "India")
+```
+
+```{r}
+LifeExpData %>% filter(infant.deaths > 480 & infant.deaths < 520)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "Nigeria")
+```
+infant.deaths do not seem to indicate any initial reporting errors. The differences seem to arise due to country.
+  
+Check out BMI:
+```{r}
+LifeExpData %>% filter(BMI < 8)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "Antigua and Barbuda")
+LifeExpData %>% filter(Country == "Zimbabwe")
+LifeExpData %>% filter(Country == "Portugal")
+LifeExpData %>% filter(Country == "Ireland")
+LifeExpData %>% filter(Country == "Equatorial Guinea")
+```
+Similar to the Adult.Mortality, there appears to be a reporting error. For example, Equatorial Guinea lists BMI around 19-23, and then has a couple 2.9 and 2.5. If you multiple the abnormally low numbers time 10, however, the adjusted numbers would be higher than all the rest. This holds true for the other four countries tested as well. 
+
+Next, let's examine Polio for errors:
+```{r}
+LifeExpData %>% filter(Polio < 18)
+```
+```{r}
+LifeExpData %>% filter(Country == "Afghanistan")
+LifeExpData %>% filter(Country == "Guatemala")
+LifeExpData %>% filter(Country == "Madagascar")
+LifeExpData %>% filter(Country == "Saint Lucia")
+LifeExpData %>% filter(Country == "United States of America")
+```
+Polio appears to have the same reporting errors.
+  
+Check now for Diphtheria:
+```{r}
+LifeExpData %>% filter(Diphtheria < 20)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "Burundi")
+LifeExpData %>% filter(Country == "Democratic Republic of the Congo")
+LifeExpData %>% filter(Country == "Liberia")
+LifeExpData %>% filter(Country == "Somalia")
+LifeExpData %>% filter(Country == "Uruguay")
+```
+Again, Diphtheria appears to have the same reporting errors.
+  
+Now, check for Income.composition.of.resources errors:
+```{r}
+LifeExpData %>% filter(Income.composition.of.resources < .1)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "Bahamas")
+LifeExpData %>% filter(Country == "Comoros")
+LifeExpData %>% filter(Country == "Kiribati")
+LifeExpData %>% filter(Country == "South Sudan")
+LifeExpData %>% filter(Country == "Vanuatu")
+```
+The errors in these entries occur due to 0 values. They were likely supposed to be null, but were submitted as 0.00 instead. These will need to be corrected.
+  
+  
+Under the Population variable, there appears to be some major outliers. Let's investigate further.
+```{r}
+LifeExpData %>% filter(Population > 500000000)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "India")
+```
+
+India should have a population above 1 billion each year, but is often in the tens/hundreds of millions in the dataset. China should have very large populations as well, but they range from 13,000 to 1.4 million. These should be about 1.4 billion. In addition, some major countries like the U.S. are missing all of its population data.
+  
+Let's investigate the outlines for GDP
+```{r}
+LifeExpData %>% filter(GDP > 100000)
+```
+
+```{r}
+LifeExpData %>% filter(Country == "Luxembourg")
+```
+The Luxembourg GDP variable (which is GDP per capita) fluctuates from 1.6k to 120k. There is a reporting error here. There may be some other inconsistent GDPs for other countries that were not investigated.
