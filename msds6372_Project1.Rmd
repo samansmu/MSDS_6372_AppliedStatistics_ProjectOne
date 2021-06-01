@@ -136,6 +136,14 @@ library(survival)
 library(magrittr)
 library(dbplyr)
 library(sjmisc)
+library(data.table)
+library(kableExtra)
+library(MLmetrics)
+library(tidypredict)
+library(PerformanceAnalytics)
+library(rgl)
+
+
 
 #There are two main objectives for Project 1.  Before providing the details to the objectives, the groups should investigate the data and make any additional logistic decisions like using all of the data or a subset, dealing with missing data ,cleaning up variable names, changing their data types, etc.  Once that is complete, I want each group to subset the data set into 2 data sets.  Suggested:  85% train, 15% test.
 
@@ -145,8 +153,7 @@ library(sjmisc)
 ##Build a model with the main goal to identify key relationships and that is highly interpretable.  Provide detailed information on summary statistics, EDA, and your model building process.
 
 #dataFrame
-LifeExpData<-Life_Expectancy_Data
-
+LifeExpData<-Life_Expectancy_Data, stringsAsFactors = T
 #View caseStudy2 data
 View(LifeExpData)
 #Checking the dimensions, the data has 2938 observatiosn with 22 variables
@@ -174,11 +181,357 @@ na.fail(pureData)
 sum(is.na(pureData))
 #Data Summary, after clearning missing values
 summary(pureData)
+str(pureData)
 #Exporting pureData to folder
 write.csv(pureData, file = "C:/Users/SADIK/OneDrive/Documents/Project1AppliedStatistics6372/MSDS_6372_AppliedStatistics_ProjectOne/pureData.csv")
+#Rang of life expectancy is 44 and 89
 
+range(pureData$"Life expectancy")
+#training and test set
+set.seed(1234)
+trainIndex<-createDataPartition(pureData$"Life expectancy",p=.85,list=F)
 
+training<-pureData[trainIndex,]
+validate<-pureData[-trainIndex,]
 
+#Chceking correlation and variance, LE has strong correlation with Schooling&IncomeComposition. LE has negative correlation with Adult Mortality. And weka correlation with populations and measles. Strong correlation between infant death and underfivedeath
 
+data_num <- pureData %>% 
+                             select_if(is.numeric)
 
+ggcorr(data_num, 
+       label = T, 
+       label_size = 2,
+       label_round = 2,
+       hjust = 1,
+       size = 3, 
+       color = "royalblue",
+       layout.exp = 5,
+       low = "green3", 
+       mid = "gray95", 
+       high = "darkorange",
+       name = "Correlation")
+# status for each country developed and developing, added dplyr to avoid R confusion with plyr
+#Developed    242 14.68%    , Developing  1407 85.32% 
+  pureData %>% 
+                 group_by(Status) %>% 
+                 dplyr::summarise(count = n()) %>% 
+                 mutate(percentage = paste0(round(count/sum(count)*100, 2), "%"))
+                 
+#Plot country
+plot1 <-  ggplot(pureData, aes(x=Status, y = "Life expectancy", fill = Status)) +
+                geom_boxplot() +
+                scale_fill_manual(values=c("green3", "darkorange")) +
+                labs(x = "Development Status", y = "Life Expectancy (Age)") +
+                theme(legend.position = "none")
 
+ggplotly(plot1)
+#Creating model
+life_selected <- pureData %>% 
+                          select(-Country, -Year) %>% 
+                          mutate("Hepatitis B" = ifelse("Hepatitis B" < 90, "<90% Covered", ">=90% Covered"),
+                                 Polio = ifelse(Polio < 90, "<90% Covered", ">=90% Covered"),
+                                 Diphtheria = ifelse(Diphtheria < 90, "<90% Covered", ">=90% Covered"),
+                                 "Hepatitis B" = as.factor("Hepatitis B"),
+                                 Polio = as.factor(Polio),
+                                 Diphtheria = as.factor(Diphtheria))
+
+str(life_selected)
+
+LEmodel <- lm(formula = "Life expectancy" ~., data = life_selected)
+summary(LEmodel)
+
+LEmodel = lm(formula = 'Life.expectancy', data = life_selected)
+
+life_model <- lm(formula = "Life expectancy" ~., data = life_selected)
+summary(life_model)
+# Spliting the data into Train and test, Suggested:  85% train, 15% test.
+data1 = sort(sample(nrow(life_selected), nrow(life_selected)*.85))
+train<-life_selected[data1,]
+test<-life_selected[-data1,]
+# Chcekng ouliner, Most of the columns have many outliers except Alcohol, BMI, Income compositionofresources. And median values will be used for the columns that have many outliers and we use mean value for the column that have not have many outliers.
+par(mfrow=c(1,3))
+boxplot(pureData$"Life expectancy",
+        ylab = "Life Expectancy",
+        main = "Boxplot of Life Expectancy")
+boxplot(pureData$"Adult Mortality",
+        ylab = "Adult Mortality",
+        main = "Boxplot of Adult Mortality")
+boxplot(pureData$Alcohol,
+        ylab = "Alcohol",
+        main = "Boxplot of Alcohol")
+par(mfrow=c(1,3))
+boxplot(pureData$"Hepatitis B",
+        ylab = "Hepatitis B",
+        main = "Boxplot of Hepatitis B")
+boxplot(pureData$BMI,
+        ylab = "BMI",
+        main = "Boxplot of BMI")
+boxplot(pureData$Polio,
+        ylab = "Polio",
+        main = "Boxplot of Polio")
+par(mfrow=c(1,3))
+boxplot(pureData$"Total expenditure",
+        ylab = "Total Expenditure",
+        main = "Boxplot of Total Expenditure")
+boxplot(pureData$Diphtheria,
+        ylab = "Diphteria",
+        main = "Boxplot of Diphteria")
+boxplot(pureData$GDP,
+        ylab = "GDP",
+        main = "Boxplot of GDP")
+par(mfrow=c(1,3))
+boxplot(pureData$Population,
+        ylab = "Population",
+        main = "Boxplot of Population")
+boxplot(pureData$"thinness 1-19 years",
+        ylab = "Thinness 1-19 years",
+        main = "Boxplot of Thinness for 1-19 years old")
+boxplot(pureData$"thinness 5-9 years",
+        ylab = "Thinness 5-9 years",
+        main = "Boxplot of Thinness for 5-9 years old")
+par(mfrow=c(1,3))
+boxplot(pureData$"Income composition of resources",
+        ylab = "Income Composition",
+        main = "Boxplot of Income Composition")
+boxplot(pureData$Schooling,
+        ylab = "Schooling",
+        main = "Boxplot of Schooling")
+#getting the median value
+life_mean <- median(pureData$"Life expectancy",  na.rm = TRUE)
+mortality_mean <- median(pureData$"Adult Mortality",  na.rm = TRUE)
+hepatitis_mean <- median(pureData$"Hepatitis B",  na.rm = TRUE)
+polio_mean <- median(pureData$Polio,  na.rm = TRUE)
+diph_mean <- median(pureData$Diphtheria,  na.rm = TRUE)
+exp_mean <- median(pureData$"Total expenditure",  na.rm = TRUE)
+gdp_mean <- median(pureData$GDP,  na.rm = TRUE)
+pop_mean <- median(pureData$Population,  na.rm = TRUE)
+thin19_mean <- median(pureData$"thinness..1.19.years,  na.rm = TRUE)
+thin9_mean <- median(pureData$"thinness 5-9 years",  na.rm = TRUE)
+school_mean <- median(pureData$Schooling,  na.rm = TRUE)
+#Replacing the missing values with median
+pureData$"Life expectancy"[is.na(pureData$"Life expectancy")] <- life_mean
+pureData$"Adult Mortality"[is.na(pureData$"Adult Mortality")] <- mortality_mean
+pureData$"Hepatitis B"[is.na(pureData$"Hepatitis B")] <- hepatitis_mean
+pureData$Polio[is.na(pureData$Polio)] <- polio_mean
+pureData$Diphtheria[is.na(pureData$Diphtheria)] <- diph_mean
+pureData$"Total expenditure"[is.na(pureData$"Total expenditure")] <- exp_mean
+pureData$GDP[is.na(pureData$GDP)] <- gdp_mean
+pureData$Population[is.na(pureData$Population)] <- pop_mean
+pureData$"thinness 1-19 years"[is.na(pureData$"thinness 1-19 years")] <- thin19_mean
+pureData$"thinness 5-9 years"[is.na(pureData$"thinness 5-9 years")] <- thin9_mean
+pureData$Schooling[is.na(pureData$Schooling)] <- school_mean
+# the mean value for the Alcohol, BMI, Income compositionofresources columns
+alcohol_mean <- mean(pureData$Alcohol,  na.rm = TRUE)
+bmi_mean <- mean(pureData$BMI,  na.rm = TRUE)
+income_mean <- mean(pureData$"Income composition of resources",  na.rm = TRUE)
+#Replaving the missing values
+pureData$Alcohol[is.na(pureData$Alcohol)] <- alcohol_mean
+pureData$BMI[is.na(pureData$BMI)] <- bmi_mean
+pureData$"Income composition of resources"[is.na(pureData$"Income composition of resources")] <- income_mean
+# preparing clean data
+data.table(head(pureData, 50),
+          options = list(scroller = TRUE, scrollX = T),
+          style = 'bootstrap',
+          class = 'table-bordered table-condensed')
+#Verifying normality of target vaiable Life Expectancy, we can see from the plot that LE is not ditributed perfectly normal, its little left skewed. 
+par(mfrow=c(1,2))
+hist(pureData$"Life expectancy",
+     main = "Life Expectance Distribution",
+     xlab = "Life Expectancy(yrs)")
+# using kernel density plot with a vertical indication of location of the mean
+plot(density(pureData$"Life expectancy"),
+     main = "Life Expectancy Distibution",
+     xlab = "Life Expectancy (yrs)")
+abline(v=mean(pureData$"Life expectancy"))
+
+#EDA Univariate variables: Alchohol, Under five years old death,Percentgae expenditure,polio, prevalenceOfThinesForAge10To19
+#we can see that Alchohol is not normaliy distibuted, its highly right skewed, the ouliners are not due to data error, abnoramly GDP values with some countries having high and low GDP, we cannot remove them
+par(mfrow=c(2,2))
+layout(matrix(c(1,1,2,3), 2, 2, byrow = F),
+   widths=c(1,1), heights=c(1,1))
+boxplot(pureData$Alcohol,
+        main = "Alcohol consumption")        
+plot(density(pureData$Alcohol),
+     main = "Distribution of Alcohol consumed",
+     xlab = "Alcohol(liters)")  
+plot(density(pureData$Alcohol^0.5),
+     main = "Distribution of Alcohol consumed",
+     xlab = "Alcohol(liters)")
+#Correlation test Alchohol and GDP. They are storngly correlated with CorCofficient 0.443 and P-value of 2.2e-16 
+cor.test(pureData$Alcohol, pureData$GDP)
+
+#Under five year old deaths, we can see that its highly right skewed
+par(mfrow=c(2,2))
+layout(matrix(c(1,1,2,3), 2, 2, byrow = F),
+   widths=c(1,1), heights=c(1,1))
+boxplot(pureData$"under-five deaths",
+        main = "Under Five Year Old Deaths")      
+plot(density(pureData$"under-five deaths"),
+     main = "Distribution / 1000 Population",
+     xlab = "Under Five Year Old Deaths(cnt)")  
+plot(density(pureData$"under-five deaths"^0.5),
+     main = "Distribution Rate / 1000 Population",
+     xlab = "Under Five Year Old Deaths rate") 
+#Correlation test , under five real old death and GDP are storngly correlated, with CorrValue -0.10 and pValue:4.476e-05
+cor.test(pureData$"under-five deaths", pureData$GDP)
+#Percentage Expenditure, not normaly distributed its highly right skewed
+par(mfrow=c(1,2))
+boxplot(pureData$"percentage expenditure",
+        main = "Percentage expenditure")    
+plot(density(pureData$"percentage expenditure"),
+     main = "% Expenditure on health",
+     xlab = "Percentage expenditure(%)")
+#Corr test, percentageExpe and GDP are strongle correlated, wih corCofficinet value 0.959 and pvalue < 2.2e-16
+cor.test(pureData$"percentage expenditure", pureData$GDP)
+# Ploio, we can see that its not normally distributed, its heavly left skewed
+par(mfrow=c(1,2))
+boxplot(pureData$Polio,
+        main = "Polio Immunization ") 
+plot(density(pureData$Polio),
+     main = "% Polio Immunization Coverage",
+     xlab = "Polio Immunization (%)")
+#Correlation test of polio and GDP. They are stronglt correlated with CorrCofficient: 0.1568 and Pvalue:1.529e-10
+cor.test(pureData$Polio, pureData$GDP)
+#Prevalence of Thinness for Age 10 t0 19, its not normaly distributed, its right skewed
+par(mfrow=c(1,2))
+boxplot(pureData$"thinness 1-19 years",
+        main = "Prevalence of thinness ") 
+plot(density(pureData$"thinness 1-19 years"),
+     main = "% Prevalence of thinness",
+     xlab = "Prevalence of thinness (%)") 
+  
+#Correlation test, they are significnatly correlated GDP and Thinnes 1-19 years
+cor.test(pureData$"thinness 1-19 years", pureData$GDP)
+
+#Predictor variables realtion with target variable LE: Income, Schooling,AdultMortality and poulation, poulation is to show ther are not correalted
+# life expectancy vs. income composition positively correlated
+plot(y = pureData$"Life expectancy",x = pureData$"Income composition of resources",main = "Life Expectancy vs. Income compositions",
+     xlab = "Income composition of resources",
+     ylab = "Life Expectancy",
+     pch = 19,
+     col = "blue")
+abline(60,1,
+       col = "red")
+# LE VS Schooling, postivly correalted
+plot(y = pureData$"Life expectancy",x = pureData$"Schooling",main = "Life Expectancy vs. Income compositions",xlab = "Schooling", ylab = "Life Expectancy", pch = 19,col = "orange") abline(60,1,col = "blue")
+#LE vs Adult Morality: negativly correalted
+plot(y = pureData$"Life expectancy",x = pureData$"Adult Mortality",main = "Life Expectancy vs. Adult Mortality",xlab = "Adult Mortality",ylab = "Life Expectancy",pch = 19,col = "yellow") abline(80, - 1,col = "blue")
+
+#LE VS Population, not correalted, the blue line also shows 45 degree line tht shows they are nor correalted
+plot(y = pureData$"Life expectancy",x = pureData$Population,main = "Life Expectancy vs. Population",xlab = "Population",
+ylab = "Life Expectancy",pch = 19,col = "red") abline(50,1,col = "blue")
+       
+#Correlation Analysis: beween the target variable, LE and independet variables(predictor variable: AdultMorality, Infant death,Alchohol, Perecntage expenditure and Hepatitis B.
+pairs.panels(pureData[,4:9], method = "pearson",hist.col = "green",density = TRUE,ellipses = TRUE)
+
+#Correlation among LE and  the predictors(Measles, BMI,Underfivedeaths,Ploio and totalExpenditure)
+pairs.panels(pureData[,c(4,10:14)], method = "pearson",hist.col = "green",density = TRUE,ellipses = TRUE)
+
+#Correlation among LE and predictors(Diphtheria, HIv/AIDS,GDP, population,thinnes1-19)
+pairs.panels(pureData[,c(4,15:19)], method = "pearson",hist.col = "green",density = TRUE,ellipses = TRUE)
+
+# Correlation amon LE and predictors(thinnes5-9, Income, and schooling)
+pairs.panels(pureData[,c(4,20:22)], method = "pearson",hist.col = "green",density = TRUE,  ellipses = TRUE )
+#  Schober & Boer, Rules we are follwing for correaltion testing
+#1 Negligible correlation = 0.00 - 0.09
+#2 Weak correlation = 0.10 - 0.39
+#3 Moderate correlation = 0.40 - 0.69
+#4 Strong correlation = 0.70 - 0.89
+#5 Very strong correlation = 0.90 - 1.00
+# Conclusion form Correlaton Analysis:
+#1. Le is strongly correlated to,Income, schooling and Adult Morality
+#2. LE has modartae correaltion with BMI, HIV/AIDS, Diphtheria, thiness5-9, thinnes1-19, GDP and polio
+#3. LE has weak correaltion to Alchohol, percenatgeEpend, to TotalEpend, Underfivedeath and infant death
+#4 LE has weak correaltion to HepatitisB,Popuplations and Measles.
+
+#Modeling
+#Cheking missing values in each column, we can see there is no missing values
+sapply(pureData, function(x) sum(is.na (x))) 
+#Hist life expectancy
+hist(pureData$"Life expectancy")
+# model crated using strongle correlated and training data set, use data in sigle quote '', not double quote, ""
+model11 <- lm(`Life expectancy` ~ Schooling +  `Adult Mortality` + `Income composition of resources`, data = training)
+summary(model11)  
+#Result of model11 summary
+Call:
+lm(formula = `Life expectancy` ~ Schooling + `Adult Mortality` + 
+    `Income composition of resources`, data = training)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-23.4757  -2.1943   0.4171   2.4253  12.7367 
+
+Coefficients:
+                                   Estimate Std. Error t value Pr(>|t|)    
+(Intercept)                       53.450691   0.669391   79.85   <2e-16 ***
+Schooling                          1.072993   0.069543   15.43   <2e-16 ***
+`Adult Mortality`                 -0.030830   0.001056  -29.21   <2e-16 ***
+`Income composition of resources` 12.709977   1.093072   11.63   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 4.406 on 1399 degrees of freedom
+Multiple R-squared:  0.7493,	Adjusted R-squared:  0.7488 
+F-statistic:  1394 on 3 and 1399 DF,  p-value: < 2.2e-16
+#Interpretataion of the above model result will be given in PPx presentation
+#prediction based on models11 obtained form EDA Analysis
+model1pred <- predict(model11,newdata = pureData, type = "response") 
+#model fitting using training data set
+model.fit <- predict(model11, newdata = training)
+#Comparing different models using TEST data set as per the requirment of project1 Assignment                  
+#Backward step model, AIC 4165.28            
+BackwardStepModel <- step(model11,direction = "backward")
+#Prediction backward step model, response is useful to get predicted value
+backwardstepPredi <- predict(BackwardStepModel, newdata = validate,type = "response")
+#Interprating backward step
+summary(BackwardStepModel)
+#Forward step model, am using EDA model but  i can use null model too  
+forwardmodel <- step(model11, direction="forward")
+#Prediction Forwad model
+predForwardModel <- predict(model11, newdata = validate, type = "response")
+#Interprating the model
+summary (forwardmodel)
+#Step wise model using EDA model, using both forward and backward model
+stepwisemodel <- step(model11, direction="both")
+#Prediction using step wise data
+predictstepwise <- predict(stepwisemodel, newdata = validate, type = "response")
+#Interpretation of step wise model
+summary (stepwisemodel)
+#Chceking assumption of the models used, so that we can evaluate and select the best model
+#Assumptions: Linearity, homogeneity of residuals variance-homoscedasticity, and independece of residuals error terms -Non-Multicolinearity and normality of the residuals Error
+#Chceking normal distribution of error, we can see that they are almost noramly distributed
+par(mfrow = c(3, 2)))
+plot(density(BackwardStepModel$residuals))
+plot(density(forwardmodel$residuals))
+plot(density(stepwisemodel$residuals))
+#Chceking homoscedasticity assumption, we can see that residulas from all model spraed equaly
+par(mfrow = c(3, 2))
+abline(h=0, col = "red")
+plot(BackwardStepModel$fitted.values, BackwardStepModel$residuals)
+abline(h=0, col = "red")
+plot(forwardmodel$fitted.values, forwardmodel$residuals)
+abline(h=0, col = "red")
+plot(stepwisemodel$fitted.values, stepwisemodel$residuals)
+abline(h=0, col = "red")
+# Chceking models non-collinearity, we use VIF, Variable Inflation Factor, cause it validates correlation among independent variables
+vif(BackwardStepModel)
+vif(forwardmodel)
+vif(stepwisemodel)
+# Evaluating of Adjusted R squared for all model
+summary(BackwardStepModel)$adj.r.squared 
+summary(forwardmodel)$adj.r.squared 
+summary(stepwisemodel)$adj.r.squared 
+# Evaluating RMSE for all model
+RMSE(y_pred = backwardstepPredi, y_true = validate$'Life expectancy')
+RMSE(y_pred = predForwardModel, y_true = validate$"Life expectancy")
+RMSE(y_pred = predictstepwise, y_true = validate$"Life expectancy")
+RMSE(y_pred = predifullmodel, y_true = validate$"Life expectancy") # has 8.831 which higher RMSE that Stepwise method
+# Full model, i used full prediction to show that it has high RMSE there step wise model is best model
+allpredimodel <- lm(`Life expectancy` ~  - Country , data = validate)
+summary(allpredimodel)                    
+# Full model prediction 
+predifullmodel <- predict(allpredimodel,newdata = validate, type = "response") 
+        
+                
+  
