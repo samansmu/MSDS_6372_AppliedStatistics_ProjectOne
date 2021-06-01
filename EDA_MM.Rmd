@@ -14,27 +14,13 @@ library(dplyr)
 library(ggplot2)
 library(stringr)
 library(PerformanceAnalytics)
-library(rgl)
+library(mice)
 ```
 Import and view summary of columns
 ```{r}
 LifeExpData = read.csv(file = "Life Expectancy Data.csv", stringsAsFactors = T)
 summary(LifeExpData)
 ```
-Impute missing values with the median
-```{r}
-quant <- subset(LifeExpData, select=-c(Country, Status))
-for(k in names(quant)){
-
-      if(k %in% names(quant)){
-        med <- median(LifeExpData[[k]],na.rm = T)
-        set(x = LifeExpData, which(is.na(LifeExpData[[k]])), k, med)
-
-    }
-}
-summary(LifeExpData)
-```
-
 
 Split data into train and split sets
 ```{r}
@@ -56,30 +42,6 @@ ggplot(LifeExpData, aes(x=Life.expectancy, fill=Status)) +
   geom_histogram(alpha=0.5, position="identity")
 ```
     
-Merge original dataset with country coordinates data. Then, convert coordinates to numeric. For latitude, make Southern values negative, and for longitude, make western values negative.
-```{r}
-Geo = read.csv(file = "Countries_Long_Lat.csv")
-LifeExpData <- merge(x = LifeExpData, y = Geo, by = "Country")
-
-LifeExpData$Latitude <- ifelse(str_detect(LifeExpData$Latitude, "S"), paste("-", LifeExpData$Latitude, sep=""), LifeExpData$Latitude)
-LifeExpData$Latitude = substr(LifeExpData$Latitude,1,nchar(LifeExpData$Latitude)-1)
-LifeExpData$Latitude <- as.numeric(LifeExpData$Latitude)
-
-LifeExpData$Longitude <- ifelse(str_detect(LifeExpData$Longitude, "W"), paste("-", LifeExpData$Longitude, sep=""), LifeExpData$Longitude)
-LifeExpData$Longitude = substr(LifeExpData$Longitude,1,nchar(LifeExpData$Longitude)-1)
-LifeExpData$Longitude <- as.numeric(LifeExpData$Longitude)
-```
-
-Visualize lat and long against life expectancy
-```{r}
-ggplot(LifeExpData, aes(y=Life.expectancy, x=Latitude)) + geom_point(alpha=0.5)
-ggplot(LifeExpData, aes(y=Life.expectancy, x=Longitude)) + geom_point(alpha=0.5)
-
-plot3d( 
-  z=LifeExpData$Life.expectancy, y=LifeExpData$Latitude, x=LifeExpData$Longitude, 
-  xlab="Longitude", ylab="Latitude", zlab="Life.expectancy")
-```
-
 View correlations between quantitative variables
 ```{r}
 quant <- subset(LifeExpData, select=-c(Country, Status))
@@ -215,3 +177,123 @@ LifeExpData %>% filter(GDP > 100000)
 LifeExpData %>% filter(Country == "Luxembourg")
 ```
 The Luxembourg GDP variable (which is GDP per capita) fluctuates from 1.6k to 120k. There is a reporting error here. There may be some other inconsistent GDPs for other countries that were not investigated.
+  
+  
+  
+Revise incorrect values. First, reimport full dataset
+```{r}
+LifeExpData = read.csv(file = "Life Expectancy Data.csv", stringsAsFactors = T)
+```
+
+Correct the values that were missing a 0 at the end (e.g. change 2 to 20 for Diphtheria):
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Diphtheria)
+
+LifeExpData$Diphtheria <- ifelse(LifeExpData$Diphtheria < 15, LifeExpData$Diphtheria * 10, LifeExpData$Diphtheria)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Diphtheria)
+```
+
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Polio)
+
+LifeExpData$Polio <- ifelse(LifeExpData$Polio < 15, LifeExpData$Polio * 10, LifeExpData$Polio)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Polio)
+```
+
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$BMI)
+
+LifeExpData$BMI <- ifelse(LifeExpData$BMI < 9, LifeExpData$BMI * 10, LifeExpData$BMI)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$BMI)
+```
+
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality)
+
+LifeExpData$Adult.Mortality <- ifelse(LifeExpData$Adult.Mortality < 4, LifeExpData$Adult.Mortality * 100, LifeExpData$Adult.Mortality)
+
+LifeExpData$Adult.Mortality <- ifelse(LifeExpData$Adult.Mortality < 45, LifeExpData$Adult.Mortality * 10, LifeExpData$Adult.Mortality)
+
+LifeExpData$Adult.Mortality <- ifelse(LifeExpData$Adult.Mortality < 100 &  LifeExpData$Life.expectancy < 65, LifeExpData$Adult.Mortality * 10, LifeExpData$Adult.Mortality)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality)
+```
+   
+The code above shows scatterplots before and after the revision. There may be some minor mistakes for values that were changed to be between 40 and 399 (but should actually be between 400 and 800). Overall though, it should accurately fix the overwhelming majority.
+   
+Now, we will revise the income composition of resources variable. There shouldn't be any 0 values and they were likely supposed to be entered as null. We will make that change now.
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Income.composition.of.resources)
+
+LifeExpData$Income.composition.of.resources <- ifelse(LifeExpData$Income.composition.of.resources < .2, NA, LifeExpData$Income.composition.of.resources)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Income.composition.of.resources)
+```
+  
+Remove 0 values from Schooling. We will impute them later.  
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Schooling)
+
+LifeExpData$Schooling <- ifelse(LifeExpData$Schooling == 0, NA, LifeExpData$Schooling)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Schooling)
+```
+  
+Remove extreme outliers for population. We will impute them later.  
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Population)
+
+LifeExpData$Population <- ifelse(LifeExpData$Population > 1000000000, NA, LifeExpData$Population)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Population)
+```
+  
+Correct extreme outliers for infant.deaths
+```{r}
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$infant.deaths)
+
+LifeExpData$infant.deaths <- ifelse(LifeExpData$infant.deaths > 750, LifeExpData$infant.deaths * .1, LifeExpData$infant.deaths)
+
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$infant.deaths)
+```
+  
+Now that the values are corrected, impute the values with the mice package using random forest:
+```{r}
+LifeExpData <- mice(LifeExpData, method="rf")
+LifeExpData <- complete(LifeExpData)
+summary(LifeExpData)
+```
+Reassess scatterlplots
+```{r}
+par(mfrow=c(2,3))
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Year)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$infant.deaths)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Alcohol)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$percentage.expenditure)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$under.five.deaths)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Measles)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$BMI)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Polio)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Total.expenditure)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Diphtheria)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$HIV.AIDS)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$GDP)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Population)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness..1.19.years)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness.5.9.years)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Income.composition.of.resources)
+plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Schooling)
+```
+Split data into train and test:
+```{r}
+set.seed(123)
+smp_size <- floor(0.75 * nrow(LifeExpData))
+train_ind  <- sample(seq_len(nrow(LifeExpData)), size = smp_size)
+train <- LifeExpData[train_ind, ]
+test <- LifeExpData[-train_ind, ]
+```
+
