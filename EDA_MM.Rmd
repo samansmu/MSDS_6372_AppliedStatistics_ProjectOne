@@ -21,6 +21,21 @@ Import and view summary of columns
 LifeExpData = read.csv(file = "Life Expectancy Data.csv", stringsAsFactors = T)
 summary(LifeExpData)
 ```
+Impute missing values with the median
+```{r}
+quant <- subset(LifeExpData, select=-c(Country, Status))
+for(k in names(quant)){
+
+      if(k %in% names(quant)){
+        med <- median(LifeExpData[[k]],na.rm = T)
+        set(x = LifeExpData, which(is.na(LifeExpData[[k]])), k, med)
+
+    }
+}
+summary(LifeExpData)
+```
+
+
 Split data into train and split sets
 ```{r}
 set.seed(123)
@@ -57,8 +72,8 @@ LifeExpData$Longitude <- as.numeric(LifeExpData$Longitude)
 
 Visualize lat and long against life expectancy
 ```{r}
-ggplot(LifeExpData %>% distinct(Country, .keep_all = TRUE) , aes(y=Life.expectancy, x=Latitude)) + geom_point(alpha=0.5)
-ggplot(LifeExpData %>% distinct(Country, .keep_all = TRUE), aes(y=Life.expectancy, x=Longitude)) + geom_point(alpha=0.5)
+ggplot(LifeExpData, aes(y=Life.expectancy, x=Latitude)) + geom_point(alpha=0.5)
+ggplot(LifeExpData, aes(y=Life.expectancy, x=Longitude)) + geom_point(alpha=0.5)
 
 plot3d( 
   z=LifeExpData$Life.expectancy, y=LifeExpData$Latitude, x=LifeExpData$Longitude, 
