@@ -1,0 +1,192 @@
+---
+title: "Objective 1"
+author: "Michael Mazel"
+date: "6/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(PerformanceAnalytics)
+library(mice)
+```
+
+#Modeling  
+First, reimport data
+```{r}
+LifeExpData = read.csv(file = "Life Expectancy Data Cleaned.csv", stringsAsFactors = T)
+set.seed(123)
+smp_size <- floor(0.75 * nrow(LifeExpData))
+train_ind  <- sample(seq_len(nrow(LifeExpData)), size = smp_size)
+train <- LifeExpData[train_ind, ]
+test <- LifeExpData[-train_ind, ]
+
+train <- subset(train, select=-c(Country, Status))
+test <- subset(test, select=-c(Country, Status))
+```
+
+View scatterplots for assumptions
+```{r}
+par(mfrow=c(2,3))
+plot(y = train$Life.expectancy, x = train$Year)
+plot(y = train$Life.expectancy, x = train$Adult.Mortality)
+plot(y = train$Life.expectancy, x = train$infant.deaths)
+plot(y = train$Life.expectancy, x = train$Alcohol)
+plot(y = train$Life.expectancy, x = train$percentage.expenditure)
+plot(y = train$Life.expectancy, x = train$under.five.deaths)
+plot(y = train$Life.expectancy, x = train$Measles)
+plot(y = train$Life.expectancy, x = train$BMI)
+plot(y = train$Life.expectancy, x = train$Polio)
+plot(y = train$Life.expectancy, x = train$Total.expenditure)
+plot(y = train$Life.expectancy, x = train$Diphtheria)
+plot(y = train$Life.expectancy, x = train$HIV.AIDS)
+plot(y = train$Life.expectancy, x = train$GDP)
+plot(y = train$Life.expectancy, x = train$Population)
+plot(y = train$Life.expectancy, x = train$thinness..1.19.years)
+plot(y = train$Life.expectancy, x = train$thinness.5.9.years)
+plot(y = train$Life.expectancy, x = train$Income.composition.of.resources)
+plot(y = train$Life.expectancy, x = train$Schooling)
+```
+
+Below are various transformations to see if the assumptions will be better fulfilled. This includes log transformations and adding quadratic terms
+```{r}
+plot(y = train$Life.expectancy, x = (train$infant.deaths))
+plot(y = train$Life.expectancy, x = log(train$infant.deaths))
+```
+```{r}
+plot(y = train$Life.expectancy, x = (train$under.five.deaths))
+plot(y = train$Life.expectancy, x = log(train$under.five.deaths))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = sqrt(train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = log(train$percentage.expenditure))
+```
+
+```{r}
+model1 <- lm(Life.expectancy ~ percentage.expenditure, data=train)
+model2 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2), data=train)
+model4 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2) + I(percentage.expenditure^3) + I(percentage.expenditure^4), data=train)
+
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+plot(model4)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Measles))
+plot(y = train$Life.expectancy, x = log(train$Measles))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$HIV.AIDS))
+plot(y = train$Life.expectancy, x = log(train$HIV.AIDS))
+```
+```{r}
+model1 <- lm(Life.expectancy ~ HIV.AIDS, data=train)
+model2 <- lm(Life.expectancy ~ HIV.AIDS + I(HIV.AIDS^2), data=train)
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+```
+
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$GDP))
+plot(y = train$Life.expectancy, x = log(train$GDP))
+plot(y = train$Life.expectancy, x = (train$GDP) ** .1)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Population))
+plot(y = train$Life.expectancy, x = log(train$Population))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$thinness..1.19.years))
+plot(y = train$Life.expectancy, x = log(train$thinness..1.19.years))
+# logged version looks worse here
+```
+  
+None of the quadratic terms seemed to improve the scatterplots enough. Log transformations fit well in most situations. Thinness was the only variable that looked worse, so we will log transform all the other ones:
+```{r}
+train$infant.deaths <- log(train$infant.deaths + .1)
+train$under.five.deaths <- log(train$under.five.deaths + .1)
+train$percentage.expenditure <- log(train$percentage.expenditure + .1)
+train$Measles <- log(train$Measles + .1)
+train$HIV.AIDS <- log(train$HIV.AIDS)
+train$GDP <- log(train$GDP)
+train$GDP <- log(train$Population)
+
+test$infant.deaths <- log(test$infant.deaths + .1)
+test$under.five.deaths <- log(test$under.five.deaths + .1)
+test$percentage.expenditure <- log(test$percentage.expenditure + .1)
+test$Measles <- log(test$Measles + .1)
+test$HIV.AIDS <- log(test$HIV.AIDS)
+test$GDP <- log(test$GDP)
+test$GDP <- log(test$Population)
+```
+
+Checking VIFs:
+```{r}
+library(car)
+full.model<-lm(Life.expectancy~.,data=train)
+vif(full.model)
+```
+We will keep all variables in the model and let LASSO remove redundant variables. However, we will still take note of high VIFs (anything over 10)
+    
+Variable selection using LASSO:
+```{r,echo=T}
+library(glmnet)
+#Formatting data for GLM net
+x=model.matrix(Life.expectancy~.,train)[,-1]
+y=train$Life.expectancy
+
+xtest<-model.matrix(Life.expectancy~.,test)[,-1]
+ytest<-log(test$Life.expectancy)
+
+
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict (lasso.mod ,s=bestlambda ,newx=xtest)
+
+testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+testMSE_LASSO
+```
+
+Examining the coefficients on the predictors below, we can see that many of them are quite small and not contributing much. We will compare a model that only includes large, positive values vs. one with all positive values:
+```{r, echo=T}
+coef(lasso.mod,s=bestlambda)
+```
+Full model after variable selection:
+```{r}
+model1 <- lm(Life.expectancy ~ Year + infant.deaths + Alcohol + percentage.expenditure + BMI + under.five.deaths + Polio + Total.expenditure + Diphtheria + GDP + thinness..1.19.years + Income.composition.of.resources + Schooling, data=train)
+summary(model1)
+```
+Trimmed model after removing non significant values:
+```{r}
+model1 <- lm(Life.expectancy ~ Year + Alcohol + Total.expenditure + Diphtheria + HIV.AIDS + Income.composition.of.resources + Schooling, data=train)
+summary(model1)
+```
+
+Checking assumptions (using the trimmed model):
+```{r}
+par(mfrow=c(2,2))
+plot(model1)
+```
+Assumptions do not look fantastic, but passable. Normality looks solid. All outliers have low Cook's D. Equality of variance seems to be the only concern.
