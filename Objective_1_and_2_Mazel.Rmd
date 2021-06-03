@@ -17,6 +17,7 @@ library(ggplot2)
 library(stringr)
 library(PerformanceAnalytics)
 library(mice)
+library(caret)
 ```
 
 #Modeling  
@@ -29,6 +30,8 @@ train_ind  <- sample(seq_len(nrow(LifeExpData)), size = smp_size)
 train <- LifeExpData[train_ind, ]
 test <- LifeExpData[-train_ind, ]
 
+train_cat <- subset(train, select=c(Country, Status))
+test_cat <- subset(test, select=c(Country, Status))
 train <- subset(train, select=-c(Country, Status))
 test <- subset(test, select=-c(Country, Status))
 ```
@@ -189,3 +192,75 @@ plot(model1)
 ```
   
 Assumptions do not look fantastic, but passable. Normality looks decent Although there are quite a few outliers, they all have relatively low Cook's D. Equality of variance looks good.
+
+   
+
+
+
+
+```{r}
+train_with_cat <- data.frame(train, train_cat)
+test_with_cat <- data.frame(test, test_cat)
+```
+
+#OBJECTIVE 2
+```{r}
+train_x = train[, -2]
+train_x = scale(train_x)[,]
+train_y = train[,2]
+
+test_x = test[, -2]
+test_x = scale(test[,-2])[,]
+test_y = test[,2]
+
+knnmodel = knnreg(train_x, train_y)
+
+str(knnmodel)
+pred_y = predict(knnmodel, data.frame(test_x))
+print(data.frame(test_y, pred_y))
+```
+
+```{r}
+accs = data.frame(mse = numeric(20), k = numeric(20))
+
+for(i in 1:20)
+{
+  knnmodel = knnreg(train_x, train_y, k = i)
+  pred_y = predict(knnmodel, data.frame(test_x))
+  mse = mean((test_y - pred_y)^2)
+
+  accs$mse[i] = mse
+  accs$k[i] = i
+}
+
+plot(accs$k,accs$mse, type = "l", xlab = "k")
+
+best_k = accs %>% slice(which.min(mse))
+best_k = best_k$k
+```
+
+```{r}
+knnmodel = knnreg(train_x, train_y, k = best_k)
+
+str(knnmodel)
+pred_y = predict(knnmodel, data.frame(test_x))
+print(data.frame(test_y, pred_y))
+```
+
+```{r}
+mse = mean((test_y - pred_y)^2)
+mae = caret::MAE(test_y, pred_y)
+rmse = caret::RMSE(test_y, pred_y)
+cat("MSE: ", mse, "MAE: ", mae, " RMSE: ", rmse)
+```
+
+```{r}
+x = 1:length(test_y)
+plot(x, test_y, col = "red", type = "l", lwd=2,
+     main = "Life Expectancy Prediction")
+lines(x, pred_y, col = "blue", lwd=2)
+legend("topright",  legend = c("original-Life Expectancy", "predicted-Life Expectancy"), 
+       fill = c("red", "blue"), col = 2:3,  adj = c(0, 0.6))
+grid()
+```
+
