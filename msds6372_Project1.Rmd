@@ -142,6 +142,16 @@ library(MLmetrics)
 library(tidypredict)
 library(PerformanceAnalytics)
 library(rgl)
+library(MatrixModels)
+library(ModelMetrics)
+library(rpart)
+library(rpart.plot)
+library(palmerpenguins)
+library(mlbench)
+library(ISLR)
+library(MASS)
+library(FNN)
+library(tibble)
 
 
 
@@ -531,7 +541,92 @@ RMSE(y_pred = predifullmodel, y_true = validate$"Life expectancy") # has 8.831 w
 allpredimodel <- lm(`Life expectancy` ~  - Country , data = validate)
 summary(allpredimodel)                    
 # Full model prediction 
-predifullmodel <- predict(allpredimodel,newdata = validate, type = "response") 
-        
+predifullmodel <- predict(allpredimodel,newdata = validate, type = "response")
+
+#Objective 2:
+#1 Creating new model and Adding more complexity, adding more independent varaibles over model1 that are moderatly correlated
+modelB<- lm(`Life expectancy` ~ Schooling +  `Adult Mortality` + `Income composition of resources` + GDP + Polio + BMI + Diphtheria, data = training)
+summary(modelB)
+#Adding polynomial This syntax fits a linear model, using the lm() function, in order to predict, using a fourth-degree polynomial in allows us to avoid having to write out a long formula
+#The function returns a matrix whose columns are a basis of orthogonal polynomials, which essentially means that each column is a #linear orthogonal combination of the variables
+model22 <-lm(`Life expectancy`∼Schooling+I(`Adult Mortality` ^2)+I(`Income composition of resources` ^3)+I(GDP ^4) ,data=training)
+summary(model22)
+#getting coef
+coef(model22)
+# Reading ISLR book and read up on one nonparametric technique to build a regression model. Using KNN regression
+LifeExpDataCleaned$Status = as.numeric(LifeExpDataCleaned$Status) - 1
+LifeExpDataCleaned$Country = as.numeric(LifeExpDataCleaned$Country) - 1
+#To chcek the class of each column see if columns are numeric or Factor
+sapply(LifeExpDataCleaned, class)
+# split the data
+LifeExpDataCleaned <- Life_Expectancy_Data_Cleaned
+na.omit(LifeExpDataCleaned)
+set.seed(123)
+smp_size <- floor(0.75 * nrow(LifeExpDataCleaned))
+train_ind  <- sample(seq_len(nrow(LifeExpDataCleaned)), size = smp_size)
+train <- LifeExpDataCleaned[train_ind, ]
+test <- LifeExpDataCleaned[-train_ind, ]
+
+# Prediction using KNN
+X_LifeExpDataCleaned = LifeExpDataCleaned[Life.expectancy]
+y_LifeExpDataCleaned= LifeExpDataCleaned$Schooling,
+
+# Creating grid test set
+LE_grid <- data.frame(Life.expectancy = seq(range(LifeExpDataCleaned$Life.expectancy)[1], range(LifeExpDataCleaned$Life.expectancy)[2], by = 0.01))
+# using 
+knnmodel <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 1)
+knnmode2 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 5)
+knnmode3 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 10)
+knnmode4 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 50)
+knnmode5 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 100)
+knnmode6 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 500)
+knnmode7 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 600)
+
+# using test predictors, for that i added prob = TRUE, using the above knn model
+LE_pred <- knn(train = train, 
+                test  = test,
+                cl    = y_LifeExpDataCleaned,
+                k     = 10,
+                prob  = TRUE)
                 
+head(LE_pred, n = 50)
+
+#Ploting the digram
+par(mfrow = c(3, 2))
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 1")
+lines(LE_grid$Life.expectancy, knnmode1$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 5")
+lines(LE_grid$Life.expectancy, knnmode2$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 10")
+lines(LE_grid$Life.expectancy, knnmode3$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 50")
+lines(LE_grid$Life.expectancy, knnmode4$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 100")
+lines(LE_grid$Life.expectancy, knnmode5$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 500")
+lines(LE_grid$Life.expectancy, knnmode6$pred, col = "darkorange", lwd = 0.25)
+plot(Schooling ~ Life.expectancy, data = LifeExpDataCleaned, cex = .8, col = "dodgerblue", main = "k = 600")
+lines(LE_grid$Life.expectancy, knnmode7$pred, col = "darkorange", lwd = 0.25)
+# getting MSE and R  , MSE = [1] 3491.835  And R2
+mse.knn5  <- mean((knnmode2$pred - LifeExpDataCleaned$Life.expectancy)^2)  
+mse.knn5
+# getting r squared, not good R squared
+ r2.knn5   <- 1- mse.knn5/(var(LifeExpDataCleaned$Life.expectancy)
+ r2.knn5 
+
+# Comparing the models AIC
+#model 1, Multiple R-squared:  0.8148,	Adjusted R-squared:  0.8143
+model11 <- lm(`Life expectancy` ~ Schooling +  `Adult Mortality` + `Income composition of resources`, data = training)
+summary(model11)
+#model 2 , using four degree  Ploynomial, Multiple R-squared:  0.8148,	Adjusted R-squared:  0.8143
+model22 <-lm(`Life expectancy`∼Schooling+I(`Adult Mortality` ^2)+I(`Income composition of resources` ^3)+I(GDP ^4) ,data=training)
+summary(model22)
+#model 3
+knnmode2 <- FNN::knn.reg(train = X_LifeExpDataCleaned, test = LE_grid, y = y_LifeExpDataCleaned, k = 5
+summary(knnmode2)
+
+
+ 
+ 
+
   
