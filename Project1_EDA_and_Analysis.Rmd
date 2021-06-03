@@ -39,17 +39,17 @@ library(ggplot2)
 library(caret)
 library(tidypredict)
 library(PerformanceAnalytics)
-library(rgl)
+#library(rgl)
 library(MatrixModels)
 library(ModelMetrics)
 library(rpart)
-library(rpart.plot)
-library(palmerpenguins)
-library(mlbench)
-library(ISLR)
-library(MASS)
-library(FNN)
-library(tibble)
+#library(rpart.plot)
+#library(palmerpenguins)
+#library(mlbench)
+#library(ISLR)
+#library(MASS)
+#library(FNN)
+#library(tibble)
 
 
 ```
@@ -82,9 +82,15 @@ ggplot(LifeExpData, aes(x=Life.expectancy, fill=Status)) +
 ```
 
 View correlations between quantitative variables
+TODO : INCLUDE NUMBERS in correlation matrix
 ```{r}
 quant <- subset(LifeExpData, select=-c(Country, Status))
 chart.Correlation(quant, histogram=FALSE, pch=19)
+
+source("http://www.sthda.com/upload/rquery_cormat.r")
+rquery.cormat(quant, type="full")
+
+cormat<-rquery.cormat(quant, graphType="heatmap")
 
 ```
 
@@ -315,27 +321,90 @@ aggr_plot <- aggr(LifeExpData, col=c('navyblue','red'), numbers=TRUE, sortVars=T
                   ylab=c("Percent data missing","Combinations Missing"))
 
 ```
-Reassess scatterlplots
+
+
+Below are various transformations to see if the assumptions will be better fulfilled. This includes log transformations and adding quadratic terms
 ```{r}
-par(mfrow=c(2,3))
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Year)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Adult.Mortality)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$infant.deaths)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Alcohol)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$percentage.expenditure)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$under.five.deaths)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Measles)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$BMI)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Polio)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Total.expenditure)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Diphtheria)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$HIV.AIDS)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$GDP)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Population)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness..1.19.years)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$thinness.5.9.years)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Income.composition.of.resources)
-plot(y = LifeExpData$Life.expectancy, x = LifeExpData$Schooling)
+plot(y = train$Life.expectancy, x = (train$infant.deaths))
+plot(y = train$Life.expectancy, x = log(train$infant.deaths))
+```
+```{r}
+plot(y = train$Life.expectancy, x = (train$under.five.deaths))
+plot(y = train$Life.expectancy, x = log(train$under.five.deaths))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = sqrt(train$percentage.expenditure))
+plot(y = log(train$Life.expectancy), x = log(train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = log(train$percentage.expenditure))
+```
+
+```{r}
+model1 <- lm(Life.expectancy ~ percentage.expenditure, data=train)
+model2 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2), data=train)
+model4 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2) + I(percentage.expenditure^3) + I(percentage.expenditure^4), data=train)
+
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+plot(model4)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Measles))
+plot(y = train$Life.expectancy, x = log(train$Measles))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$HIV.AIDS))
+plot(y = train$Life.expectancy, x = log(train$HIV.AIDS))
+```
+```{r}
+model1 <- lm(Life.expectancy ~ HIV.AIDS, data=train)
+model2 <- lm(Life.expectancy ~ HIV.AIDS + I(HIV.AIDS^2), data=train)
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+```
+
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$GDP))
+plot(y = train$Life.expectancy, x = log(train$GDP))
+plot(y = train$Life.expectancy, x = (train$GDP) ** .1)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Population))
+plot(y = train$Life.expectancy, x = log(train$Population))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$thinness..1.19.years))
+plot(y = train$Life.expectancy, x = log(train$thinness..1.19.years))
+# logged version looks worse here
+```
+  
+None of the quadratic terms seemed to improve the scatterplots enough. Log transformations fit well in most situations. Thinness was the only variable that looked worse, so we will log transform all the other ones:
+```{r}
+train$infant.deaths <- log(train$infant.deaths + .1)
+train$under.five.deaths <- log(train$under.five.deaths + .1)
+train$percentage.expenditure <- log(train$percentage.expenditure + .1)
+train$Measles <- log(train$Measles + .1)
+train$HIV.AIDS <- log(train$HIV.AIDS)
+train$GDP <- log(train$GDP)
+train$GDP <- log(train$Population)
+
+test$infant.deaths <- log(test$infant.deaths + .1)
+test$under.five.deaths <- log(test$under.five.deaths + .1)
+test$percentage.expenditure <- log(test$percentage.expenditure + .1)
+test$Measles <- log(test$Measles + .1)
+test$HIV.AIDS <- log(test$HIV.AIDS)
+test$GDP <- log(test$GDP)
+test$GDP <- log(test$Population)
 ```
 
 Are these graphs useful?
@@ -379,15 +448,6 @@ Practical Consideration for Objective 1:
 EDA, EDA, EDA!  It helps you on so many fronts so use it to your advantage.  When writing a concise report, you do not have to literally step out every single step of your model building process.  I know you guys are going to being iterating on things many many times.  That does not all have to be there.  You can summarize that iteration stuff in a paragraph.  
 What is key in the report is that you develop a “story” of your analysis.  Keep in mind that when you are finished with your analysis.  You know how it is going to end (what the final models look like).  You can use this to your advantage when selecting what parts of the EDA and additional information to show.  For example, if you know that predictor X7 is in your final model and it is one of the stronger relationships, that is probably a good one to show and discuss in the EDA part.  You would show the reader, “Hey look at these interesting trends”, “Hey look at these that are not”, etc.  When you report your final model and you are bringing back up the predictors discussed in EDA, it helps build the confidence of the reader in what you are doing is making sense.  I will discuss presentation strategies “Dos and Donts” during our dead week (Unit 6).
 
-
-Run Correlation Matrix
-
-```{r}
-source("http://www.sthda.com/upload/rquery_cormat.r")
-rquery.cormat(quant, type="full")
-
-cormat<-rquery.cormat(quant, graphType="heatmap")
-```
 
 
 Model 1 created using strongly correlated data from Correlation Matrix
@@ -515,38 +575,61 @@ coef(step.model.1$finalModel, 4)
 
 KNN
 ```{r}
-
-
-train_x = train[, -20]
+train_x = train[, -2]
 train_x = scale(train_x)[,]
-train_y = train[,20]
+train_y = train[,2]
 
-test_x = test[, -20]
-test_x = scale(test[,-20])[,]
-test_y = test[,20]
+test_x = test[, -2]
+test_x = scale(test[,-2])[,]
+test_y = test[,2]
 
 knnmodel = knnreg(train_x, train_y)
- 
+
 str(knnmodel)
-
 pred_y = predict(knnmodel, data.frame(test_x))
-
 print(data.frame(test_y, pred_y))
+```
 
+```{r}
+accs = data.frame(mse = numeric(20), k = numeric(20))
+
+for(i in 1:20)
+{
+  knnmodel = knnreg(train_x, train_y, k = i)
+  pred_y = predict(knnmodel, data.frame(test_x))
+  mse = mean((test_y - pred_y)^2)
+
+  accs$mse[i] = mse
+  accs$k[i] = i
+}
+
+plot(accs$k,accs$mse, type = "l", xlab = "k")
+
+best_k = accs %>% slice(which.min(mse))
+best_k = best_k$k
+```
+
+```{r}
+knnmodel = knnreg(train_x, train_y, k = best_k)
+
+str(knnmodel)
+pred_y = predict(knnmodel, data.frame(test_x))
+print(data.frame(test_y, pred_y))
+```
+
+```{r}
 mse = mean((test_y - pred_y)^2)
 mae = caret::MAE(test_y, pred_y)
 rmse = caret::RMSE(test_y, pred_y)
-
 cat("MSE: ", mse, "MAE: ", mae, " RMSE: ", rmse)
+```
 
+```{r}
 x = 1:length(test_y)
-
 plot(x, test_y, col = "red", type = "l", lwd=2,
      main = "Life Expectancy Prediction")
 lines(x, pred_y, col = "blue", lwd=2)
 legend("topright",  legend = c("original-Life Expectancy", "predicted-Life Expectancy"), 
        fill = c("red", "blue"), col = 2:3,  adj = c(0, 0.6))
 grid()
- 
-
 ```
