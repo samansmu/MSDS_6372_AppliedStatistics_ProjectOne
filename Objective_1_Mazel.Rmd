@@ -2,7 +2,9 @@
 title: "Objective 1"
 author: "Michael Mazel"
 date: "6/2/2021"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -175,12 +177,12 @@ coef(lasso.mod,s=bestlambda)
 ```
 Full model after variable selection:
 ```{r}
-model1 <- lm(Life.expectancy ~ Year + infant.deaths + Alcohol + percentage.expenditure + BMI + under.five.deaths + Polio + Total.expenditure + Diphtheria + GDP + thinness..1.19.years + Income.composition.of.resources + Schooling, data=train)
+model1 <- lm(Life.expectancy ~ Year + infant.deaths + Alcohol + percentage.expenditure + BMI + under.five.deaths + Polio + Total.expenditure + Diphtheria + GDP + thinness..1.19.years + Income.composition.of.resources + Schooling, data=test)
 summary(model1)
 ```
-Trimmed model after removing non significant values:
+Trimmed model:
 ```{r}
-model1 <- lm(Life.expectancy ~ Year + Alcohol + Total.expenditure + Diphtheria + HIV.AIDS + Income.composition.of.resources + Schooling, data=train)
+model1 <- lm(Life.expectancy ~ Year + Alcohol + Total.expenditure + Diphtheria + HIV.AIDS + Income.composition.of.resources + Schooling, data=test)
 summary(model1)
 ```
 
@@ -189,4 +191,4 @@ Checking assumptions (using the trimmed model):
 par(mfrow=c(2,2))
 plot(model1)
 ```
-Assumptions do not look fantastic, but passable. Normality looks solid. All outliers have low Cook's D. Equality of variance seems to be the only concern.
+Assumptions do not look fantastic, but passable. Normality looks pretty good. All outliers have low Cook's D. Equality of variance seems to be the only concern.
