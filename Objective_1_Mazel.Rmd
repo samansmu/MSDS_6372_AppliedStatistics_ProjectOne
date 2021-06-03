@@ -69,6 +69,7 @@ plot(y = train$Life.expectancy, x = log(train$under.five.deaths))
 ```{r}
 plot(y = train$Life.expectancy, x = (train$percentage.expenditure))
 plot(y = train$Life.expectancy, x = sqrt(train$percentage.expenditure))
+plot(y = log(train$Life.expectancy), x = log(train$percentage.expenditure))
 plot(y = train$Life.expectancy, x = log(train$percentage.expenditure))
 ```
 
@@ -155,7 +156,7 @@ x=model.matrix(Life.expectancy~.,train)[,-1]
 y=train$Life.expectancy
 
 xtest<-model.matrix(Life.expectancy~.,test)[,-1]
-ytest<-log(test$Life.expectancy)
+ytest<-test$Life.expectancy
 
 
 
@@ -175,14 +176,9 @@ Examining the coefficients on the predictors below, we can see that many of them
 ```{r, echo=T}
 coef(lasso.mod,s=bestlambda)
 ```
-Full model after variable selection:
+Model after variable selection:
 ```{r}
-model1 <- lm(Life.expectancy ~ Year + infant.deaths + Alcohol + percentage.expenditure + BMI + under.five.deaths + Polio + Total.expenditure + Diphtheria + GDP + thinness..1.19.years + Income.composition.of.resources + Schooling, data=test)
-summary(model1)
-```
-Trimmed model:
-```{r}
-model1 <- lm(Life.expectancy ~ Year + Alcohol + Total.expenditure + Diphtheria + HIV.AIDS + Income.composition.of.resources + Schooling, data=test)
+model1 <- lm(Life.expectancy ~ Year + Adult.Mortality + Alcohol + percentage.expenditure + Hepatitis.B + Measles + BMI + Polio + Total.expenditure + Diphtheria + HIV.AIDS + Population + thinness.5.9.years + Income.composition.of.resources + Schooling, data=test)
 summary(model1)
 ```
 
@@ -191,4 +187,5 @@ Checking assumptions (using the trimmed model):
 par(mfrow=c(2,2))
 plot(model1)
 ```
-Assumptions do not look fantastic, but passable. Normality looks pretty good. All outliers have low Cook's D. Equality of variance seems to be the only concern.
+  
+Assumptions do not look fantastic, but passable. Normality looks decent Although there are quite a few outliers, they all have relatively low Cook's D. Equality of variance looks good.
