@@ -1,0 +1,690 @@
+---
+title: "Project_1"
+author: "Jason Herbaugh, Sadik Aman, Michael Mazel"
+date: "5/29/2021"
+output: html_document
+---
+
+MSDS 6372 Project 1 Description
+
+For this project, we are going to be using a data set provided in Kaggle titled “Life Expectancy (WHO):  Statistical Analysis on factors influencing life expectancy”.  The information was collected over numerous years and, because of logistics in recording changes over time, there will be some missing data issues that the group must discuss and develop a strategy to proceed. 
+
+Data, along with information on the variables included in the file can be found at https://www.kaggle.com/kumarajarshi/life-expectancy-who.  
+
+
+Setting Options for Analysis 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+Import Libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(stringr)
+library(PerformanceAnalytics)
+library(mice)
+library(caret)
+library(corrr)
+library(VIM)
+library(glmnet)
+library(Boruta)
+library(ggstatsplot)
+library(ggExtra)
+```
+
+Additional Options for Analysis
+```{r}
+theme_set(theme_minimal())
+theme_update(axis.title = element_text()) #the default for fivethirtyeight is to not show axis labels, this removes that default so we can choose to specify and display axis titles
+theme_update(plot.title = element_text(hjust = 0.5)) # changing default to center all titles
+
+options(scipen=999) #prevent scientific notation
+```
+
+Import and view summary of columns
+```{r}
+LifeExpData = read.csv(file = "Life Expectancy Data.csv", stringsAsFactors = T)
+set.seed(123)
+smp_size <- floor(0.75 * nrow(LifeExpData))
+train_ind  <- sample(seq_len(nrow(LifeExpData)), size = smp_size)
+train <- LifeExpData[train_ind, ]
+test <- LifeExpData[-train_ind, ]
+
+summary(train)
+```
+
+
+
+
+
+Check how many levels are in each categorical variable. Then view histograms
+```{r}
+length(unique(train$Status))
+length(unique(train$Country))
+```
+
+```{r}
+ggplot(train, aes(x=Life.expectancy, fill=Status)) +
+  geom_histogram(alpha=0.5, position="identity")
+```
+
+View correlations between quantitative variables
+TODO : INCLUDE NUMBERS in correlation matrix
+```{r}
+quant <- subset(train, select=-c(Country, Status))
+
+
+res.cor <- correlate(quant)
+res.cor
+
+quant %>% 
+    correlate(use = "pairwise.complete.obs") %>% 
+    rearrange(method = "PCA") %>% 
+    shave() %>%
+    # rplot need to receive a correlation matrix
+    rplot(shape = 15, colours = c("darkorange", "white", "darkcyan")) +
+    theme_minimal() +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+
+```
+
+We can see our response variable, LifeExpectancy, has correlations up to .75. Predictor variables have correlations up to 1 with one-another. Let's view the scatterplots
+```{r}
+par(mfrow=c(2,3))
+plot(y = train$Life.expectancy, x = train$Year)
+plot(y = train$Life.expectancy, x = train$Adult.Mortality)
+plot(y = train$Life.expectancy, x = train$infant.deaths)
+plot(y = train$Life.expectancy, x = train$Alcohol)
+plot(y = train$Life.expectancy, x = train$percentage.expenditure)
+plot(y = train$Life.expectancy, x = train$under.five.deaths)
+plot(y = train$Life.expectancy, x = train$Measles)
+plot(y = train$Life.expectancy, x = train$BMI)
+plot(y = train$Life.expectancy, x = train$Polio)
+plot(y = train$Life.expectancy, x = train$Total.expenditure)
+plot(y = train$Life.expectancy, x = train$Diphtheria)
+plot(y = train$Life.expectancy, x = train$HIV.AIDS)
+plot(y = train$Life.expectancy, x = train$GDP)
+plot(y = train$Life.expectancy, x = train$Population)
+plot(y = train$Life.expectancy, x = train$thinness..1.19.years)
+plot(y = train$Life.expectancy, x = train$thinness.5.9.years)
+plot(y = train$Life.expectancy, x = train$Income.composition.of.resources)
+plot(y = train$Life.expectancy, x = train$Schooling)
+```
+
+We can see a few points of concern, such as some strong outliers. Additionally, some variables have distinct branches, such as Adult.Mortality. Let's explore these variables to see if we can determine the cause. First, we will color based off developed or undeveloped status.
+```{r}
+plot(y = train$Life.expectancy, x = train$Adult.Mortality, col = train$Status)
+```
+
+
+This does not solve the disparity, let's see the individual data points between the two clusters
+```{r}
+train %>% filter(Adult.Mortality < 40)
+train %>% filter(Adult.Mortality > 100)
+```
+Counties frequently appear in both groups above. For example, Afghanistan has a 3 listed for Adult.Mortality in one year, and all the others years fall between 260 and 320. Similar situations occur with many other counties such as Armenia, South Sudan, and Spain. It seems clear the cause is a reporting error, in which countries incorrectly reported their statistic as per 100 population or per 10 population. It should be reported as per 1000 population.
+  
+Now, let's examine similar situations from above. First, infant.deaths:
+```{r}
+train %>% filter(infant.deaths < 500)
+train %>% filter(infant.deaths > 750)
+```
+```{r}
+train %>% filter(Country == "India")
+```
+
+```{r}
+train %>% filter(infant.deaths > 480 & infant.deaths < 520)
+```
+
+```{r}
+train %>% filter(Country == "Nigeria")
+```
+infant.deaths do not seem to indicate any initial reporting errors. The differences seem to arise due to country.
+  
+Check out BMI:
+```{r}
+train %>% filter(BMI < 8)
+```
+
+```{r}
+train %>% filter(Country == "Antigua and Barbuda")
+train %>% filter(Country == "Zimbabwe")
+train %>% filter(Country == "Portugal")
+train %>% filter(Country == "Ireland")
+train %>% filter(Country == "Equatorial Guinea")
+```
+Similar to the Adult.Mortality, there appears to be a reporting error. For example, Equatorial Guinea lists BMI around 19-23, and then has a couple 2.9 and 2.5. If you multiple the abnormally low numbers time 10, however, the adjusted numbers would be higher than all the rest. This holds true for the other four countries tested as well. 
+
+Next, let's examine Polio for errors:
+```{r}
+train %>% filter(Polio < 18)
+```
+```{r}
+train %>% filter(Country == "Afghanistan")
+train %>% filter(Country == "Guatemala")
+train %>% filter(Country == "Madagascar")
+train %>% filter(Country == "Saint Lucia")
+train %>% filter(Country == "United States of America")
+```
+Polio appears to have the same reporting errors.
+  
+Check now for Diphtheria:
+```{r}
+train %>% filter(Diphtheria < 20)
+```
+
+```{r}
+train %>% filter(Country == "Burundi")
+train %>% filter(Country == "Democratic Republic of the Congo")
+train %>% filter(Country == "Liberia")
+train %>% filter(Country == "Somalia")
+train %>% filter(Country == "Uruguay")
+```
+Again, Diphtheria appears to have the same reporting errors.
+  
+Now, check for Income.composition.of.resources errors:
+```{r}
+train %>% filter(Income.composition.of.resources < .1)
+```
+
+```{r}
+train %>% filter(Country == "Bahamas")
+train %>% filter(Country == "Comoros")
+train %>% filter(Country == "Kiribati")
+train %>% filter(Country == "South Sudan")
+train %>% filter(Country == "Vanuatu")
+```
+The errors in these entries occur due to 0 values. They were likely supposed to be null, but were submitted as 0.00 instead. These will need to be corrected.
+  
+  
+Under the Population variable, there appears to be some major outliers. Let's investigate further.
+```{r}
+train %>% filter(Population > 500000000)
+```
+
+```{r}
+train %>% filter(Country == "India")
+```
+
+India should have a population above 1 billion each year, but is often in the tens/hundreds of millions in the dataset. China should have very large populations as well, but they range from 13,000 to 1.4 million. These should be about 1.4 billion. In addition, some major countries like the U.S. are missing all of its population data.
+  
+Let's investigate the outlines for GDP
+```{r}
+train %>% filter(GDP > 100000)
+```
+
+```{r}
+train %>% filter(Country == "Luxembourg")
+```
+The Luxembourg GDP variable (which is GDP per capita) fluctuates from 1.6k to 120k. There is a reporting error here. There may be some other inconsistent GDPs for other countries that were not investigated.
+  
+  
+
+Correct the values that were missing a 0 at the end (e.g. change 2 to 20 for Diphtheria):
+```{r}
+plot(y = train$Life.expectancy, x = train$Diphtheria)
+
+train$Diphtheria <- ifelse(train$Diphtheria < 15, train$Diphtheria * 10, train$Diphtheria)
+
+plot(y = train$Life.expectancy, x = train$Diphtheria)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = train$Polio)
+
+train$Polio <- ifelse(train$Polio < 15, train$Polio * 10, train$Polio)
+
+plot(y = train$Life.expectancy, x = train$Polio)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = train$BMI)
+
+train$BMI <- ifelse(train$BMI < 9, train$BMI * 10, train$BMI)
+
+plot(y = train$Life.expectancy, x = train$BMI)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = train$Adult.Mortality)
+
+train$Adult.Mortality <- ifelse(train$Adult.Mortality < 4, train$Adult.Mortality * 100, train$Adult.Mortality)
+
+train$Adult.Mortality <- ifelse(train$Adult.Mortality < 45, train$Adult.Mortality * 10, train$Adult.Mortality)
+
+train$Adult.Mortality <- ifelse(train$Adult.Mortality < 100 &  train$Life.expectancy < 65, train$Adult.Mortality * 10, train$Adult.Mortality)
+
+plot(y = train$Life.expectancy, x = train$Adult.Mortality)
+```
+   
+The code above shows scatterplots before and after the revision. There may be some minor mistakes for values that were changed to be between 40 and 399 (but should actually be between 400 and 800). Overall though, it should accurately fix the overwhelming majority.
+   
+Now, we will revise the income composition of resources variable. There shouldn't be any 0 values and they were likely supposed to be entered as null. We will make that change now.
+```{r}
+plot(y = train$Life.expectancy, x = train$Income.composition.of.resources)
+
+train$Income.composition.of.resources <- ifelse(train$Income.composition.of.resources < .2, NA, train$Income.composition.of.resources)
+
+plot(y = train$Life.expectancy, x = train$Income.composition.of.resources)
+```
+  
+Remove 0 values from Schooling. We will impute them later.  
+```{r}
+plot(y = train$Life.expectancy, x = train$Schooling)
+
+train$Schooling <- ifelse(train$Schooling == 0, NA, train$Schooling)
+
+plot(y = train$Life.expectancy, x = train$Schooling)
+```
+  
+Remove extreme outliers for population. We will impute them later.  
+```{r}
+plot(y = train$Life.expectancy, x = train$Population)
+
+train$Population <- ifelse(train$Population > 1000000000, NA, train$Population)
+
+plot(y = train$Life.expectancy, x = train$Population)
+```
+  
+Correct extreme outliers for infant.deaths
+```{r}
+plot(y = train$Life.expectancy, x = train$infant.deaths)
+
+train$infant.deaths <- ifelse(train$infant.deaths > 750, train$infant.deaths * .1, train$infant.deaths)
+
+plot(y = train$Life.expectancy, x = train$infant.deaths)
+```
+  
+Now that the values are corrected, impute the values with the mice package using random forest:
+```{r}
+
+aggr_plot <- aggr(train, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(train), cex.axis=.7, gap=3, 
+                  ylab=c("Percent data missing","Combinations Missing"))
+
+train <- mice(train, method="rf")
+train <- complete(train)
+summary(train)
+
+
+test <- mice(test, method="rf")
+test <- complete(test)
+summary(test)
+
+aggr_plot <- aggr(train, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(train), cex.axis=.7, gap=3, 
+                  ylab=c("Percent data missing","Combinations Missing"))
+
+```
+
+
+Below are various transformations to see if the assumptions will be better fulfilled. This includes log transformations and adding quadratic terms
+```{r}
+plot(y = train$Life.expectancy, x = (train$infant.deaths))
+plot(y = train$Life.expectancy, x = log(train$infant.deaths))
+```
+```{r}
+plot(y = train$Life.expectancy, x = (train$under.five.deaths))
+plot(y = train$Life.expectancy, x = log(train$under.five.deaths))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = sqrt(train$percentage.expenditure))
+plot(y = log(train$Life.expectancy), x = log(train$percentage.expenditure))
+plot(y = train$Life.expectancy, x = log(train$percentage.expenditure))
+```
+
+
+```{r}
+model1 <- lm(Life.expectancy ~ percentage.expenditure, data=train)
+model2 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2), data=train)
+model4 <- lm(Life.expectancy ~ percentage.expenditure + I(percentage.expenditure^2) + I(percentage.expenditure^3) + I(percentage.expenditure^4), data=train)
+
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+plot(model4)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Measles))
+plot(y = train$Life.expectancy, x = log(train$Measles))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$HIV.AIDS))
+plot(y = train$Life.expectancy, x = log(train$HIV.AIDS))
+```
+```{r}
+model1 <- lm(Life.expectancy ~ HIV.AIDS, data=train)
+model2 <- lm(Life.expectancy ~ HIV.AIDS + I(HIV.AIDS^2), data=train)
+
+par(mfrow=c(2,2))
+plot(model1)
+plot(model2)
+```
+
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$GDP))
+plot(y = train$Life.expectancy, x = log(train$GDP))
+plot(y = train$Life.expectancy, x = (train$GDP) ** .1)
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$Population))
+plot(y = train$Life.expectancy, x = log(train$Population))
+```
+
+```{r}
+plot(y = train$Life.expectancy, x = (train$thinness..1.19.years))
+plot(y = train$Life.expectancy, x = log(train$thinness..1.19.years))
+# logged version looks worse here
+```
+  
+None of the quadratic terms seemed to improve the scatterplots enough. Log transformations fit well in most situations. Thinness was the only variable that looked worse, so we will log transform all the other ones:
+```{r}
+train$infant.deaths <- log(train$infant.deaths + .1)
+train$under.five.deaths <- log(train$under.five.deaths + .1)
+train$percentage.expenditure <- log(train$percentage.expenditure + .1)
+train$Measles <- log(train$Measles + .1)
+train$HIV.AIDS <- log(train$HIV.AIDS)
+train$GDP <- log(train$GDP)
+train$GDP <- log(train$Population)
+
+test$infant.deaths <- log(test$infant.deaths + .1)
+test$under.five.deaths <- log(test$under.five.deaths + .1)
+test$percentage.expenditure <- log(test$percentage.expenditure + .1)
+test$Measles <- log(test$Measles + .1)
+test$HIV.AIDS <- log(test$HIV.AIDS)
+test$GDP <- log(test$GDP)
+test$GDP <- log(test$Population)
+```
+
+Are these graphs useful?
+```{r}
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Adult.Mortality)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = infant.deaths)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Alcohol)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = percentage.expenditure)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Hepatitis.B)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Measles)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = BMI)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = under.five.deaths)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Polio)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Total.expenditure)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Diphtheria)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = HIV.AIDS)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = GDP)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Population)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Income.composition.of.resources)
+ggstatsplot::ggscatterstats(data = train, x = Life.expectancy, y = Schooling)
+```
+
+
+
+
+Objective 1: Display the ability to build regression models using the skills and discussions from Unit 1 and 2 with the purpose of identifying key relationships and interpreting those relationships.   
+•	Build a model with the main goal to identify key relationships and that is highly interpretable.  Provide detailed information on summary statistics, EDA, and your model building process.
+•	Provide interpretation of the regression coefficients of your final model including hypothesis testing, interpretation of regression coefficients, and confidence intervals. It’s also good to mention the Practical vs Statistical significance of the predictors.  Answer any additional questions using your model that you deem are relevant.
+•	The training data set can be used for EDA and model fitting while the test set can be used to help compare models to make a final call.
+Practical Consideration for Objective 1:
+EDA, EDA, EDA!  It helps you on so many fronts so use it to your advantage.  When writing a concise report, you do not have to literally step out every single step of your model building process.  I know you guys are going to being iterating on things many many times.  That does not all have to be there.  You can summarize that iteration stuff in a paragraph.  
+What is key in the report is that you develop a “story” of your analysis.  Keep in mind that when you are finished with your analysis.  You know how it is going to end (what the final models look like).  You can use this to your advantage when selecting what parts of the EDA and additional information to show.  For example, if you know that predictor X7 is in your final model and it is one of the stronger relationships, that is probably a good one to show and discuss in the EDA part.  You would show the reader, “Hey look at these interesting trends”, “Hey look at these that are not”, etc.  When you report your final model and you are bringing back up the predictors discussed in EDA, it helps build the confidence of the reader in what you are doing is making sense.  I will discuss presentation strategies “Dos and Donts” during our dead week (Unit 6).
+
+```{r}
+train_cat <- subset(train, select=c(Country, Status))
+test_cat <- subset(test, select=c(Country, Status))
+train <- subset(train, select=-c(Country, Status))
+test <- subset(test, select=-c(Country, Status))
+```
+
+Model 1 created using strongly correlated data from Correlation Matrix
+
+```{r}
+
+model1 <- lm(Life.expectancy ~ ., data=train)
+
+summary(model1)  
+
+
+#prediction based on models11 obtained form EDA Analysis
+model1pred <- predict(model1,newdata = train, type = "response") 
+#model fitting using training data set
+model.fit <- predict(model1, newdata = train)
+#Comparing different models using TEST data set as per the requirment of project1 Assignment                  
+#Backward step model, AIC 4165.28            
+BackwardStepModel <- step(model1,direction = "backward")
+#Prediction backward step model, response is useful to get predicted value
+backwardstepPredi <- predict(BackwardStepModel, newdata = test,type = "response")
+#Interprating backward step
+summary(BackwardStepModel)
+#Forward step model, am using EDA model but  i can use null model too  
+forwardmodel <- step(model1, direction="forward")
+#Prediction Forwad model
+predForwardModel <- predict(model1, newdata = test, type = "response")
+#Interprating the model
+summary (forwardmodel)
+#Step wise model using EDA model, using both forward and backward model
+stepwisemodel <- step(model1, direction="both")
+#Prediction using step wise data
+predictstepwise <- predict(stepwisemodel, newdata = test, type = "response")
+
+
+#Interpretation of step wise model
+summary (stepwisemodel)
+#Chceking assumption of the models used, so that we can evaluate and select the best model
+#Assumptions: Linearity, homogeneity of residuals variance-homoscedasticity, and independece of residuals error terms -Non-Multicolinearity and normality of the residuals Error
+#Chceking normal distribution of error, we can see that they are almost noramly distributed
+par(mfrow = c(3, 2))
+plot(density(BackwardStepModel$residuals))
+plot(density(forwardmodel$residuals))
+plot(density(stepwisemodel$residuals))
+#Chceking homoscedasticity assumption, we can see that residulas from all model spraed equaly
+par(mfrow = c(3, 2))
+abline(h=0, col = "red")
+plot(BackwardStepModel$fitted.values, BackwardStepModel$residuals)
+abline(h=0, col = "red")
+plot(forwardmodel$fitted.values, forwardmodel$residuals)
+abline(h=0, col = "red")
+plot(stepwisemodel$fitted.values, stepwisemodel$residuals)
+abline(h=0, col = "red")
+# Chceking models non-collinearity, we use VIF, Variable Inflation Factor, cause it tests correlation among independent variables
+vif(BackwardStepModel)
+vif(forwardmodel)
+vif(stepwisemodel)
+# Evaluating of Adjusted R squared for all model
+summary(BackwardStepModel)$adj.r.squared 
+summary(forwardmodel)$adj.r.squared 
+summary(stepwisemodel)$adj.r.squared 
+# Evaluating RMSE for all model
+RMSE(backwardstepPredi, test$Life.expectancy)
+RMSE(predForwardModel, test$Life.expectancy)
+RMSE(predictstepwise, test$Life.expectancy)
+
+# Full model, i used full prediction to show that it has high RMSE there step wise model is best model
+#allpredimodel <- lm(`Life expectancy` ~  - Country , data = test)
+summary(allpredimodel)                    
+
+
+```
+
+
+
+Variable selection using LASSO:
+```{r,echo=T}
+#Formatting data for GLM net
+x=model.matrix(Life.expectancy~.,train)[,-1]
+y=train$Life.expectancy
+
+xtest<-model.matrix(Life.expectancy~.,test)[,-1]
+ytest<-test$Life.expectancy
+
+
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict (lasso.mod ,s=bestlambda ,newx=xtest)
+
+testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+testMSE_LASSO
+```
+
+Examining the coefficients on the predictors below, we can see that many of them are quite small and not contributing much. We will compare a model that only includes large, positive values vs. one with all positive values:
+```{r, echo=T}
+coef(lasso.mod,s=bestlambda)
+```
+Model after variable selection:
+```{r}
+model1 <- lm(Life.expectancy ~ Year + Adult.Mortality + Alcohol + percentage.expenditure + Hepatitis.B + Measles + BMI + Polio + Total.expenditure + Diphtheria + HIV.AIDS + Population + thinness.5.9.years + Income.composition.of.resources + Schooling, data=test)
+summary(model1)
+```
+
+
+
+
+
+
+Objective 2:  While your model from Objective 1 may be interpretable there may be some additional complexity that you could incorporate to your model so that it can predict better at the expense of interpretations.  The purpose of this objective is to go through a process to compare multiple models with the goal of developing a model that can predict the best and do well on future data.  
+•	Use the training and test set to build at least one additional multiple linear regression model that attempts to find a model with additional complexity than the interpretable model of Objective 1.  The point here is to make sure we understand how to add complexity to a linear regression model.   Hint:  It’s not just including a model with predictors that you’ve eliminated from Objective 1.
+•	I want you to use the ISLR text book below (and the google machine) and read up on one nonparametric technique to build a regression model.  I want you to select from k-nearest neighbors’ regression or regression trees. There is a chapter on trees in the ISLR book.  For information on knn regression, see Section 3.5.  It is important to know that knn can be applied to regression as well as classification problems.  Make sure your implementation in R is using the knn regression versions rather than the classification.  See me on this if you need help or reassurance.  You will use the training and test sets here to help determine the most appropriate tree or the most appropriate “k” in knn. 
+•	http://faculty.marshall.usc.edu/gareth-james/ISL/ISLR%20Seventh%20Printing.pdf
+
+```{r}
+train_new <- bind_cols(train, train_cat)
+
+
+set.seed(123)
+#Boruta Feature Engineering
+boruta.talent_train <- Boruta(Life.expectancy~ ., data = train_new, doTrace = 2, maxRuns = 100)
+print(boruta.talent_train)
+
+#take a call on tentative features
+boruta.talent <- TentativeRoughFix(boruta.talent_train)
+print(boruta.talent)
+
+getSelectedAttributes(boruta.talent_train, withTentative = F)
+
+plot(boruta.talent, xlab = "", xaxt = "n")
+lz<-lapply(1:ncol(boruta.talent$ImpHistory),function(i)
+  boruta.talent$ImpHistory[is.finite(boruta.talent$ImpHistory[,i]),i])
+names(lz) <- colnames(boruta.talent$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels),
+     at = 1:ncol(boruta.talent$ImpHistory), cex.axis = 0.7)
+
+
+LifeExp_lm_1_full <- lm(Life.expectancy ~ (.)^2, data=train_new_status)
+summary(LifeExp_lm_1_full)
+
+
+
+LifeExp_lm_2_full <- lm(Life.expectancy ~ (Adult.Mortality + HIV.AIDS + Income.composition.of.resources + Alcohol)^2 , data=train)
+summary(LifeExp_lm_2_full)
+
+
+LifeExp_lm_3_full <- lm(Life.expectancy ~ Adult.Mortality *Alcohol +  Income.composition.of.resources + Alcohol , data=train)
+summary(LifeExp_lm_3_full)
+
+
+
+
+
+
+tc <- trainControl(method = "cv", number = 10, repeats = 5)
+
+
+lm_cv_leapBackward <- train(Life.expectancy ~ Adult.Mortality *Alcohol +  Income.composition.of.resources + Alcohol, data = train, method = "leapBackward",
+             trControl = tc) # here
+
+lm_cv_leapForward <- train(Life.expectancy ~ Adult.Mortality *Alcohol +  Income.composition.of.resources + Alcohol, data = train, method = "leapForward",
+             trControl = tc) # here
+
+lm_cv_leapSeq <- train(Life.expectancy ~ Adult.Mortality *Alcohol +  Income.composition.of.resources + Alcohol, data = train, method = "leapSeq",
+             trControl = tc) # here
+
+
+lm_cv_leapBackward
+lm_cv_leapForward
+lm_cv_leapSeq
+
+
+model_list <- list(lm_cv_leapBackward = lm_cv_leapBackward, lm_cv_leapForward = lm_cv_leapForward, lm_cv_leapSeq =lm_cv_leapSeq )
+res <- resamples(model_list)
+summary(res)
+
+
+```
+
+
+
+KNN
+```{r}
+train_x = train[, -2]
+train_x = scale(train_x)[,]
+train_y = train[,2]
+test_x = test[, -2]
+test_x = scale(test[,-2])[,]
+test_y = test[,2]
+
+knnmodel = knnreg(train_x, train_y)
+str(knnmodel)
+pred_y = predict(knnmodel, data.frame(test_x))
+print(data.frame(test_y, pred_y))
+
+summary(test_x)
+```
+
+```{r}
+accs = data.frame(mse = numeric(20), k = numeric(20))
+
+for(i in 1:20)
+{
+  knnmodel = knnreg(train_x, train_y, k = i)
+  pred_y = predict(knnmodel, data.frame(test_x))
+  mse = mean((test_y - pred_y)^2)
+
+  accs$mse[i] = mse
+  accs$k[i] = i
+}
+
+plot(accs$k,accs$mse, type = "l", xlab = "k")
+
+best_k = accs %>% slice(which.min(mse))
+best_k = best_k$k
+```
+
+```{r}
+knnmodel = knnreg(train_x, train_y, k = best_k)
+
+str(knnmodel)
+pred_y = predict(knnmodel, data.frame(test_x))
+print(data.frame(test_y, pred_y))
+```
+
+```{r}
+mse = mean((test_y - pred_y)^2)
+mae = caret::MAE(test_y, pred_y)
+rmse = caret::RMSE(test_y, pred_y)
+cat("MSE: ", mse, "MAE: ", mae, " RMSE: ", rmse)
+```
+
+```{r}
+x = 1:length(test_y)
+plot(x, test_y, col = "red", type = "l", lwd=2,
+     main = "Life Expectancy Prediction")
+lines(x, pred_y, col = "blue", lwd=2)
+legend("topright",  legend = c("original-Life Expectancy", "predicted-Life Expectancy"), 
+       fill = c("red", "blue"), col = 2:3,  adj = c(0, 0.6))
+grid()
+```
