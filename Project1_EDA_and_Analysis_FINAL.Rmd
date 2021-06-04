@@ -486,28 +486,31 @@ Model 1 created using strongly correlated data from Correlation Matrix
 
 model1 <- lm(Life.expectancy ~ ., data=train)
 
-summary(model1)  
+summary(model1)
+
+model11 <- lm(Life.expectancy ~ Schooling + Adult.Mortality + Income.composition.of.resources, data = test)
+summary(model11)
 
 
 #prediction based on models11 obtained form EDA Analysis
-model1pred <- predict(model1,newdata = train, type = "response") 
+model1pred <- predict(model11,newdata = train, type = "response") 
 #model fitting using training data set
-model.fit <- predict(model1, newdata = train)
+model.fit <- predict(model11, newdata = train)
 #Comparing different models using TEST data set as per the requirment of project1 Assignment                  
 #Backward step model, AIC 4165.28            
-BackwardStepModel <- step(model1,direction = "backward")
+BackwardStepModel <- step(model11,direction = "backward")
 #Prediction backward step model, response is useful to get predicted value
 backwardstepPredi <- predict(BackwardStepModel, newdata = test,type = "response")
 #Interprating backward step
 summary(BackwardStepModel)
 #Forward step model, am using EDA model but  i can use null model too  
-forwardmodel <- step(model1, direction="forward")
+forwardmodel <- step(model11, direction="forward")
 #Prediction Forwad model
-predForwardModel <- predict(model1, newdata = test, type = "response")
+predForwardModel <- predict(model11, newdata = test, type = "response")
 #Interprating the model
 summary (forwardmodel)
 #Step wise model using EDA model, using both forward and backward model
-stepwisemodel <- step(model1, direction="both")
+stepwisemodel <- step(model11, direction="both")
 #Prediction using step wise data
 predictstepwise <- predict(stepwisemodel, newdata = test, type = "response")
 
@@ -544,8 +547,9 @@ RMSE(predForwardModel, test$Life.expectancy)
 RMSE(predictstepwise, test$Life.expectancy)
 
 # Full model, i used full prediction to show that it has high RMSE there step wise model is best model
-#allpredimodel <- lm(`Life expectancy` ~  - Country , data = test)
+allpredimodel <- lm(Life.expectancy ~ ., data=test)
 summary(allpredimodel)                    
+
 
 
 ```
@@ -579,12 +583,17 @@ Examining the coefficients on the predictors below, we can see that many of them
 ```{r, echo=T}
 coef(lasso.mod,s=bestlambda)
 ```
-Model after variable selection:
+Model after variable selection:  Adjusted R square: 0.9346
 ```{r}
 model1 <- lm(Life.expectancy ~ Year + Adult.Mortality + Alcohol + percentage.expenditure + Hepatitis.B + Measles + BMI + Polio + Total.expenditure + Diphtheria + HIV.AIDS + Population + thinness.5.9.years + Income.composition.of.resources + Schooling, data=test)
 summary(model1)
-```
 
+# when using strongle correlated variables, AdjustedR square is better.  0.9412, AIC=3298.829
+model11 <- model11 <- lm(Life.expectancy ~ Schooling + Adult.Mortality + Income.composition.of.resources, data = test)
+summary(model11)
+
+
+```
 
 
 
