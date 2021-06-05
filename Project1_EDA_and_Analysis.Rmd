@@ -431,6 +431,7 @@ summary(model1)
 model11 <- lm(Life.expectancy ~ Schooling + Adult.Mortality + Income.composition.of.resources, data = test)
 summary(model11)
 
+#Residuals Model 1
 par(mfrow=c(2,2))
 plot(model11)
 
@@ -576,6 +577,9 @@ summary(LifeExp_lm_2_full)
 LifeExp_lm_3_full <- lm(Life.expectancy ~ Adult.Mortality *Alcohol +  Income.composition.of.resources + Alcohol , data=train)
 summary(LifeExp_lm_3_full)
 
+#Residuals Model 2
+par(mfrow=c(2,2))
+plot(LifeExp_lm_3_full)
 
 
 #Cross validation 
