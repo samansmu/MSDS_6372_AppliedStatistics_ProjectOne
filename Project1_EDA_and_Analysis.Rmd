@@ -431,6 +431,9 @@ summary(model1)
 model11 <- lm(Life.expectancy ~ Schooling + Adult.Mortality + Income.composition.of.resources, data = test)
 summary(model11)
 
+par(mfrow=c(2,2))
+plot(model11)
+
 
 #prediction based on models11 obtained form EDA Analysis
 model1pred <- predict(model11,newdata = train, type = "response") 
